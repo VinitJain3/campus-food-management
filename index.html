@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Campus pre-order management system">
+  <title>Campus Pre-Order</title>
+  <style>
+    :root {
+      --ink: #1d2a24;
+      --muted: #68746e;
+      --paper: #f7f4ec;
+      --surface: #fffdf8;
+      --accent: #ef6f3e;
+      --accent-dark: #c9532c;
+      --line: #e5e0d5;
+      --success: #2b7a5c;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.5;
+    }
+
+    .shell { max-width: 1080px; margin: 0 auto; padding: 28px 20px 56px; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 56px; }
+    .brand { font-weight: bold; letter-spacing: .02em; }
+    .brand span { color: var(--accent); }
+    .status { color: var(--success); font: 600 12px/1.2 Arial, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+
+    .intro { max-width: 700px; margin-bottom: 36px; }
+    h1 { max-width: 680px; margin: 0 0 16px; font-size: clamp(42px, 7vw, 76px); line-height: .98; letter-spacing: -.04em; }
+    .intro p { max-width: 560px; margin: 0; color: var(--muted); font: 17px/1.6 Arial, sans-serif; }
+
+    .workspace { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .75fr); gap: 24px; align-items: start; }
+    .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 24px; }
+    .panel h2 { margin: 0 0 20px; font-size: 25px; }
+    .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; }
+    label { display: grid; gap: 7px; color: var(--muted); font: 700 11px/1.2 Arial, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+    select, input { width: 100%; border: 1px solid var(--line); border-radius: 5px; padding: 12px; color: var(--ink); background: #fff; font: 15px Arial, sans-serif; }
+    .menu { display: grid; gap: 10px; }
+    .menu-item { display: flex; justify-content: space-between; align-items: center; gap: 18px; border-top: 1px solid var(--line); padding: 16px 0; }
+    .menu-item h3 { margin: 0 0 4px; font-size: 18px; }
+    .menu-item p { margin: 0; color: var(--muted); font: 13px Arial, sans-serif; }
+    .price { margin-left: auto; font: 700 15px Arial, sans-serif; white-space: nowrap; }
+    button { border: 0; border-radius: 5px; padding: 11px 15px; color: #fff; background: var(--accent); cursor: pointer; font: 700 13px Arial, sans-serif; }
+    button:hover { background: var(--accent-dark); }
+    button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid rgba(239, 111, 62, .3); outline-offset: 2px; }
+
+    .summary { position: sticky; top: 20px; }
+    .summary-row { display: flex; justify-content: space-between; gap: 20px; padding: 11px 0; border-bottom: 1px solid var(--line); font: 14px Arial, sans-serif; }
+    .summary-row span:first-child { color: var(--muted); }
+    .total { margin: 18px 0 22px; display: flex; justify-content: space-between; font-size: 22px; font-weight: bold; }
+    .checkout { width: 100%; padding: 14px; font-size: 14px; }
+    .empty { color: var(--muted); font: 14px Arial, sans-serif; }
+    .notice { min-height: 20px; margin-top: 14px; color: var(--success); font: 13px Arial, sans-serif; }
+
+    @media (max-width: 760px) {
+      header { margin-bottom: 40px; }
+      .workspace { grid-template-columns: 1fr; }
+      .summary { position: static; }
+    }
+
+    @media (max-width: 480px) {
+      .shell { padding: 20px 14px 40px; }
+      .filters { grid-template-columns: 1fr; }
+      .panel { padding: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="brand">campus<span>/</span>pre-order</div>
+      <div class="status">● kitchen open</div>
+    </header>
+
+    <section class="intro">
+      <h1>Good food,<br>less waiting.</h1>
+      <p>Choose your campus, pick a collection time, and have lunch ready when you arrive.</p>
+    </section>
+
+    <section class="workspace" aria-label="Pre-order workspace">
+      <div class="panel">
+        <h2>Build your order</h2>
+        <div class="filters">
+          <label>Campus
+            <select id="campus">
+              <option>Main Campus</option>
+              <option>North Campus</option>
+              <option>City Campus</option>
+            </select>
+          </label>
+          <label>Pickup time
+            <select id="pickup">
+              <option>12:15 PM</option>
+              <option>12:30 PM</option>
+              <option>12:45 PM</option>
+              <option>1:00 PM</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="menu">
+          <article class="menu-item">
+            <div><h3>Campus grain bowl</h3><p>Roasted vegetables, greens, tahini dressing</p></div>
+            <span class="price">$8.50</span>
+            <button type="button" data-name="Campus grain bowl" data-price="8.50">Add</button>
+          </article>
+          <article class="menu-item">
+            <div><h3>Spiced chicken wrap</h3><p>Herbed chicken, tomato, yogurt sauce</p></div>
+            <span class="price">$7.25</span>
+            <button type="button" data-name="Spiced chicken wrap" data-price="7.25">Add</button>
+          </article>
+          <article class="menu-item">
+            <div><h3>Fresh fruit cup</h3><p>Seasonal fruit, mint, lime</p></div>
+            <span class="price">$3.00</span>
+            <button type="button" data-name="Fresh fruit cup" data-price="3.00">Add</button>
+          </article>
+        </div>
+      </div>
+
+      <aside class="panel summary">
+        <h2>Your order</h2>
+        <div id="order-items" class="empty">No items added yet.</div>
+        <div class="total"><span>Total</span><span id="total">$0.00</span></div>
+        <button class="checkout" id="checkout" type="button">Place pre-order</button>
+        <div class="notice" id="notice" role="status" aria-live="polite"></div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const order = [];
+    const items = document.querySelector('#order-items');
+    const total = document.querySelector('#total');
+    const notice = document.querySelector('#notice');
+
+    function renderOrder() {
+      if (!order.length) {
+        items.className = 'empty';
+        items.textContent = 'No items added yet.';
+        total.textContent = '$0.00';
+        return;
+      }
+
+      items.className = '';
+      items.innerHTML = order.map((item, index) => `
+        <div class="summary-row">
+          <span>${item.name}</span>
+          <strong>$${item.price.toFixed(2)} <button type="button" aria-label="Remove ${item.name}" data-remove="${index}">×</button></strong>
+        </div>
+      `).join('');
+      total.textContent = `$${order.reduce((sum, item) => sum + item.price, 0).toFixed(2)}`;
+    }
+
+    document.querySelectorAll('[data-name]').forEach((button) => {
+      button.addEventListener('click', () => {
+        order.push({ name: button.dataset.name, price: Number(button.dataset.price) });
+        notice.textContent = '';
+        renderOrder();
+      });
+    });
+
+    items.addEventListener('click', (event) => {
+      const removeButton = event.target.closest('[data-remove]');
+      if (removeButton) order.splice(Number(removeButton.dataset.remove), 1);
+      renderOrder();
+    });
+
+    document.querySelector('#checkout').addEventListener('click', () => {
+      notice.textContent = order.length
+        ? `Order reserved for ${document.querySelector('#pickup').value} at ${document.querySelector('#campus').value}.`
+        : 'Add an item before placing your pre-order.';
+    });
+  </script>
+</body>
+</html>
