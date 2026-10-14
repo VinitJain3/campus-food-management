@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Campus Bites">
+  <circle cx="24" cy="24" r="22" fill="#C2410C"/>
+  <path d="M10 25h28a14 12 0 0 1-28 0z" fill="#FFF7ED"/>
+  <rect x="8" y="23" width="32" height="3" rx="1.5" fill="#FDBA74"/>
+  <path d="M18 19c-2-3 2-4 0-7M24 19c-2-3 2-4 0-7M30 19c-2-3 2-4 0-7" stroke="#FFF7ED" stroke-width="2" fill="none" stroke-linecap="round"/>
+</svg>

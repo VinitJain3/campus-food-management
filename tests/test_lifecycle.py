@@ -39,13 +39,13 @@ def test_ac17_collected_units_stay_consumed(shop, fruit_order, aug4_1300):
 # --- Rejection releases everything (BC-7) --------------------------------------------------
 
 def test_ac09_rejection_closes_the_order_and_releases_all_lines(shop, aug4_1300):
-    first = shop.order("A", aug4_1300, {"Fruit Bowl": 6, "Masala Dosa": 3})
+    first = shop.order("A", aug4_1300, {"Fruit Bowl": 6, "Sprouts Salad": 3})  # both Healthy Food: one order
     assert shop.available(aug4_1300)["Fruit Bowl"] == 0
     rejected = shop.staff(first, "reject", reason="Kitchen closed early")
     assert rejected["status"] == Status.REJECTED
     assert rejected["reason"] == "Kitchen closed early"
     assert shop.available(aug4_1300)["Fruit Bowl"] == 6
-    assert shop.available(aug4_1300)["Masala Dosa"] == 15
+    assert shop.available(aug4_1300)["Sprouts Salad"] == 12
     second = shop.order("B", aug4_1300, {"Fruit Bowl": 6})  # a new pre-order from B now fits
     assert shop.status(second) == Status.SUBMITTED
 
@@ -92,7 +92,7 @@ def test_ac12_cancel_refused_once_preparation_has_started(shop, fruit_order, aug
 
 
 def test_submitted_order_cannot_be_cancelled_a07(shop, fruit_order):
-    with pytest.raises(InvalidTransition, match="awaiting confirmation"):
+    with pytest.raises(InvalidTransition, match="waiting for the outlet to accept"):
         shop.cancel(fruit_order, "Asha")
 
 
@@ -115,7 +115,7 @@ def test_staff_cannot_cancel_and_customers_cannot_run_staff_actions(shop, fruit_
 
 def test_ac14_order_cannot_be_collected_twice(shop, fruit_order):
     shop.staff(fruit_order, "confirm", "start_preparing", "mark_ready", "collect")
-    with pytest.raises(InvalidTransition, match="already been collected"):
+    with pytest.raises(InvalidTransition, match="already been delivered"):
         shop.staff(fruit_order, "collect")
 
 
@@ -186,7 +186,10 @@ def test_staff_queue_filters_by_outlet_and_status(shop, fruit_order, aug4_1300, 
     dosa = shop.order("Ben", aug4_1300, {"Masala Dosa": 1})
     with db.connection(db_path) as conn:
         healthy = conn.execute("SELECT id FROM outlet WHERE name = 'Healthy Food'").fetchone()["id"]
-    healthy_queue = orders.list_orders(outlet_id=healthy, statuses=[Status.SUBMITTED], db_path=db_path)
-    assert [order["id"] for order in healthy_queue] == [fruit_order]
-    submitted = orders.list_orders(statuses=[Status.SUBMITTED], db_path=db_path)
-    assert {order["id"] for order in submitted} == {fruit_order, dosa}
+    healthy_queue = {order["id"] for order in orders.list_orders(outlet_id=healthy, statuses=[Status.SUBMITTED],
+                                                                  db_path=db_path)}
+    assert fruit_order in healthy_queue and dosa not in healthy_queue
+    assert all(order["outlet"] == "Healthy Food"
+               for order in orders.list_orders(outlet_id=healthy, db_path=db_path))
+    submitted = {order["id"] for order in orders.list_orders(statuses=[Status.SUBMITTED], db_path=db_path)}
+    assert {fruit_order, dosa} <= submitted

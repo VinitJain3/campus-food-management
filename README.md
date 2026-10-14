@@ -81,6 +81,8 @@ Order lifecycle: **Submitted → Confirmed → Preparing → Ready for Pickup �
 
 ## Demo script
 
+The full presentation runbook, with exact steps, expected results and talking points, is in [DEMO.md](DEMO.md). Short version:
+
 1. **Customer** "Asha": slot *Tue 4 Aug 2026, 13:00–13:30*. Fruit Bowl shows *6 of 10 left*, Veg Sandwich *12 of 20*, Cold Coffee *Unavailable*.
 2. Order 2 Masala Dosa + 1 Fruit Bowl and submit. You get order #4, *Submitted*; Fruit Bowl drops to 5.
 3. **Failure:** order 6 Fruit Bowl + 13 Veg Sandwich. The order is refused, naming Veg Sandwich (13 requested, 12 left), and nothing is reserved.

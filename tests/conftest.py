@@ -1,6 +1,8 @@
 import pytest
 
-from campus_food import db, inventory, orders
+from campus_food import db, inventory, orders, seed_data
+
+PDF_ITEMS = {item["name"] for item in seed_data.MENU_ITEMS if item.get("pdf")}
 
 
 class Shop:
@@ -26,14 +28,25 @@ class Shop:
     def available(self, slot_id: int) -> dict[str, int]:
         return {name: item.available for name, item in self.availability(slot_id).items()}
 
-    def order(self, customer: str, slot_id: int, quantities: dict[str, int]) -> int:
+    def pdf_available(self, slot_id: int) -> dict[str, int]:
+        """Availability of the five challenge items only."""
+        return {name: qty for name, qty in self.available(slot_id).items() if name in PDF_ITEMS}
+
+    def checkout(self, customer: str, slot_id: int, quantities: dict[str, int]) -> orders.Checkout:
         cart = {self.item(name): qty for name, qty in quantities.items()}
         return orders.submit_order(customer, slot_id, cart, db_path=self.db_path)
 
-    def staff(self, order_id: int, *actions: str, reason: str | None = None) -> dict:
+    def order(self, customer: str, slot_id: int, quantities: dict[str, int]):
+        """The new order id, or a list of ids when the cart spans several outlets."""
+        ids = self.checkout(customer, slot_id, quantities).order_ids
+        return ids[0] if len(ids) == 1 else list(ids)
+
+    def staff(self, order_id: int, *actions: str, reason: str | None = None, prep_minutes: int | None = None) -> dict:
         result = None
         for action in actions:
-            result = orders.transition(order_id, action, orders.STAFF, reason=reason, db_path=self.db_path)
+            result = orders.transition(order_id, action, orders.STAFF, reason=reason,
+                                       prep_minutes=prep_minutes if action in ("accept", "confirm") else None,
+                                       db_path=self.db_path)
         return result
 
     def cancel(self, order_id: int, customer: str) -> dict:

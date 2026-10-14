@@ -1,0 +1,26 @@
+# Visual identity for Campus Bites. Fonts are Streamlit's bundled Source Sans / Source Serif,
+# so nothing is fetched from the internet.
+[theme]
+base = "light"
+primaryColor = "#C2410C"
+backgroundColor = "#FFFBF6"
+secondaryBackgroundColor = "#FFF1E4"
+textColor = "#1C1917"
+borderColor = "#EADBCB"
+linkColor = "#9A3412"
+font = "sans-serif"
+headingFont = "serif"
+headingFontWeights = [700, 700, 650, 600, 600, 600]
+baseRadius = "0.75rem"
+buttonRadius = "full"
+greenColor = "#15803D"
+orangeColor = "#B45309"
+redColor = "#B91C1C"
+blueColor = "#1D4ED8"
+violetColor = "#6D28D9"
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"

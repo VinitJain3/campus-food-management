@@ -1,4 +1,9 @@
-"""End-to-end through the real Streamlit UI (headless AppTest), against a temporary database."""
+"""The real Streamlit screens, driven headlessly (AppTest) against a temporary database.
+
+AppTest cannot follow st.navigation between function pages or keep a dialog open
+across reruns, so each screen is rendered directly and dialog flows are covered
+by the browser check in tools/browser_check.py.
+"""
 
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -7,113 +12,92 @@ from campus_food import db, orders
 from campus_food.status import Status
 
 
-@pytest.fixture
-def app(db_path, monkeypatch):
+@pytest.fixture(autouse=True)
+def use_test_db(db_path, monkeypatch):
     monkeypatch.setattr(db, "DEFAULT_DB_PATH", db_path)
-    at = AppTest.from_file("../app.py", default_timeout=30)
+
+
+def screen(name: str) -> AppTest:
+    """Render one screen function from ui/ with fresh session state."""
+    def script(screen_name):
+        from ui import components, customer, theme, vendor  # noqa: F401
+        components.init_state()
+        {"orders": customer.orders_page, "vendor": vendor.dashboard_page, "tools": vendor.tools_page}[screen_name]()
+    at = AppTest.from_function(script, args=(name,), default_timeout=30)
     at.run()
-    assert not at.exception
+    assert not at.exception, [e.value for e in at.exception]
     return at
 
 
-def as_customer(at, name):
-    at.sidebar.radio[0].set_value("Customer").run()
-    at.sidebar.text_input(key="customer_name").input(name).run()
-
-
-def as_staff(at):
-    at.sidebar.radio[0].set_value("Outlet staff").run()
-
-
-def choose_slot(at, shop, slot_date, start):
-    at.selectbox[0].set_value(shop.slot(slot_date, start)).run()
-
-
-def set_qty(at, shop, item_name, qty):
-    version = at.session_state["cart_version"]
-    at.number_input(key=f"qty_{version}_{shop.item(item_name)}").set_value(qty)
-
-
-def submit(at):
-    next(b for b in at.button if b.label == "Submit pre-order").click().run()
-
-
-def click(at, key):
-    at.button(key=key).click().run()
-
-
-def test_customer_and_staff_end_to_end(app, shop, aug4_1300):
-    at = app
-    # Customer: order 2 Masala Dosa + 1 Fruit Bowl for 4 Aug 13:00.
-    as_customer(at, "Asha")
-    choose_slot(at, shop, "2026-08-04", "13:00")
-    set_qty(at, shop, "Masala Dosa", 2)
-    set_qty(at, shop, "Fruit Bowl", 1)
-    submit(at)
+def test_home_shows_five_outlets_and_opens_a_menu():
+    at = AppTest.from_file("../app.py", default_timeout=30).run()
     assert not at.exception
-    assert "Order #4 submitted" in at.success[0].value
-    assert shop.available(aug4_1300)["Fruit Bowl"] == 5
-    assert at.session_state["cart_version"] == 1  # cart cleared after success
+    assert [b.label for b in at.button if b.key and b.key.startswith("view-")] == ["View menu"] * 5
+    at.button(key="view-2").click().run()  # Fast Food
+    assert at.query_params["outlet"] in ("2", ["2"])
+    assert sorted(b.key for b in at.button if b.key and b.key.startswith("add-")) == ["add-4", "add-5", "add-6"]
 
-    # Staff: confirm, start preparing, mark ready, collect.
-    as_staff(at)
-    for key, expected in [("confirm_4", Status.CONFIRMED), ("start_preparing_4", Status.PREPARING),
-                          ("mark_ready_4", Status.READY)]:
-        click(at, key)
+
+def test_menu_quantity_controls_update_the_cart(shop):
+    at = AppTest.from_file("../app.py", default_timeout=30).run()
+    at.button(key="view-2").click().run()
+    at.button(key="add-4").click().run()
+    at.button(key="more-4").click().run()
+    assert at.session_state["cart"] == [{"item_id": 4, "qty": 2, "options": []}]
+    at.button(key="less-4").click().run()
+    at.button(key="less-4").click().run()
+    assert at.session_state["cart"] == []
+
+
+def test_unavailable_dish_cannot_be_added():
+    at = AppTest.from_file("../app.py", default_timeout=30).run()  # default slot: 4 Aug 13:00
+    at.button(key="view-1").click().run()  # Coffee
+    assert at.button(key="add-1").disabled  # Cold Coffee is unavailable on 4 Aug
+    assert not at.button(key="add-2").disabled
+
+
+def test_vendor_moves_an_order_forward(shop, aug5_1300):
+    order_id = shop.order("Dev", aug5_1300, {"Veg Burger": 1})
+    shop.staff(order_id, "accept", prep_minutes=10)
+    at = screen("vendor")
+    assert [m.label for m in at.metric] == ["Revenue today", "Today's orders", "Pending", "Completed today"]
+    for action, expected in [("start_preparing", Status.PREPARING), ("mark_ready", Status.READY),
+                             ("deliver", Status.DELIVERED), ("complete", Status.COMPLETED)]:
+        at.button(key=f"{action}-{order_id}").click().run()
         assert not at.exception
-        assert shop.status(4) == expected
-
-    # Customer sees the status and cannot cancel any more.
-    as_customer(at, "Asha")
-    assert any("Ready for Pickup" in md.value for md in at.markdown)
-    assert not [b for b in at.button if b.key == "cancel_4"]
-
-    as_staff(at)
-    click(at, "collect_4")
-    assert shop.status(4) == Status.COLLECTED
-    # Collecting the same order again from the "collect by number" tab is refused.
-    at.number_input[0].set_value(4).run()
-    next(b for b in at.button if b.label == "Mark collected").click().run()
-    assert "already been collected" in at.error[0].value
+        assert shop.status(order_id) == expected
 
 
-def test_all_or_nothing_failure_is_shown_and_cart_kept(app, shop, aug4_1300):
-    at = app
-    as_customer(at, "Asha")
-    choose_slot(at, shop, "2026-08-04", "13:00")
-    set_qty(at, shop, "Fruit Bowl", 6)
-    set_qty(at, shop, "Veg Sandwich", 13)
-    submit(at)
-    assert "Veg Sandwich: requested 13, only 12 left." in at.error[0].value
-    assert shop.order_count() == 3  # only the seed orders
-    assert at.session_state["cart_version"] == 0  # cart kept so the customer can adjust it
+def test_vendor_dashboard_offers_accept_and_reject_for_new_orders(shop, aug5_1300):
+    order_id = shop.order("Dev", aug5_1300, {"Veg Burger": 1})
+    at = screen("vendor")
+    assert at.button(key=f"accept-{order_id}").label == "Accept"
+    assert at.button(key=f"reject-{order_id}").label == "Reject"
 
 
-def test_reject_and_customer_cancel_release_stock(app, shop, aug4_1300):
-    at = app
-    first = shop.order("Asha", aug4_1300, {"Fruit Bowl": 6})
-    as_staff(at)
-    click(at, f"reject_{first}")
-    assert "Give a reason" in at.error[0].value  # reason is required
-    at.text_input(key=f"reason_{first}").input("Out of fruit").run()
-    click(at, f"reject_{first}")
-    assert shop.status(first) == Status.REJECTED
-    assert shop.available(aug4_1300)["Fruit Bowl"] == 6
-
-    second = shop.order("Ben", aug4_1300, {"Fruit Bowl": 2})
-    shop.staff(second, "confirm")
-    as_customer(at, "Ben")
-    click(at, f"cancel_{second}")
-    assert shop.status(second) == Status.CANCELLED
-    assert shop.available(aug4_1300)["Fruit Bowl"] == 6
+def test_customer_cancels_an_accepted_order_with_confirmation(shop, aug5_1300):
+    order_id = shop.order("Asha Rao", aug5_1300, {"Veg Burger": 1})
+    shop.staff(order_id, "accept")
+    at = screen("orders")
+    at.button(key=f"cancel-{order_id}").click().run()
+    assert shop.status(order_id) == Status.ACCEPTED  # asks first
+    at.button(key=f"cancel-yes-{order_id}").click().run()
+    assert shop.status(order_id) == Status.CANCELLED
 
 
-def test_reset_button_restores_seed(app, shop, aug4_1300):
-    at = app
+def test_reorder_puts_previous_items_in_the_cart(db_path):
+    completed = next(o for o in orders.list_orders(customer_name="Asha Rao", db_path=db_path)
+                     if o["status"] == Status.COMPLETED)
+    at = screen("orders")
+    at.button(key=f"reorder-{completed['id']}").click().run()
+    assert sorted((line["item_id"], line["qty"]) for line in at.session_state["cart"]) == \
+        sorted((item["item_id"], item["qty"]) for item in completed["items"])
+
+
+def test_stock_page_and_reset(shop, aug4_1300):
     shop.order("Asha", aug4_1300, {"Fruit Bowl": 6})
-    as_staff(at)
-    at.sidebar.checkbox[0].check().run()
-    next(b for b in at.sidebar.button if b.label == "Reset demo data").click().run()
-    assert shop.order_count() == 3
-    assert shop.available(aug4_1300)["Fruit Bowl"] == 6
-    assert orders.list_orders(customer_name="Asha", db_path=shop.db_path) == []
+    at = screen("tools")
+    assert at.dataframe[0].value.shape[0] == 15  # every dish
+    at.checkbox(key="reset-sure").check().run()
+    at.button(key="reset").click().run()
+    assert shop.available(aug4_1300)["Fruit Bowl"] == 6 and shop.order_count() == 12

@@ -7,14 +7,17 @@ import pytest
 from campus_food import db, inventory, orders, seed_data
 from campus_food.errors import AvailabilityError, NotFound, ValidationError
 from campus_food.status import Status
+from conftest import PDF_ITEMS
 
 
 # --- Seed data exactly as the PDF and the outlet brief give it --------------------------
 
-def test_menu_has_the_five_items_outlets_and_quantities(db_path):
+def test_menu_has_the_five_challenge_items_outlets_and_quantities(db_path):
     with db.connection(db_path) as conn:
         menu = {row["name"]: (row["category"], row["outlet"], row["qty_per_slot"]) for row in inventory.list_menu(conn)}
-    assert menu == {
+        outlets = [outlet["name"] for outlet in inventory.list_outlets(conn)]
+    assert outlets == ["Coffee", "Fast Food", "Healthy Food", "Main Meal", "Pure Veg"]
+    assert {name: value for name, value in menu.items() if name in PDF_ITEMS} == {
         "Cold Coffee": ("Beverages", "Coffee", 18),
         "Veg Sandwich": ("Snacks", "Fast Food", 20),
         "Paneer Rice Bowl": ("Meals", "Main Meal", 12),
@@ -25,7 +28,7 @@ def test_menu_has_the_five_items_outlets_and_quantities(db_path):
 
 def test_ac01_availability_4_aug_1300(shop, aug4_1300):
     available = shop.availability(aug4_1300)
-    assert {name: item.available for name, item in available.items()} == {
+    assert shop.pdf_available(aug4_1300) == {
         "Veg Sandwich": 12, "Masala Dosa": 15, "Paneer Rice Bowl": 12, "Cold Coffee": 0, "Fruit Bowl": 6,
     }
     assert available["Cold Coffee"].state == inventory.RESTRICTED
@@ -33,7 +36,7 @@ def test_ac01_availability_4_aug_1300(shop, aug4_1300):
 
 def test_availability_4_aug_1230(shop, aug4_1230):
     available = shop.availability(aug4_1230)
-    assert {name: item.available for name, item in available.items()} == {
+    assert shop.pdf_available(aug4_1230) == {
         "Veg Sandwich": 20, "Masala Dosa": 15, "Paneer Rice Bowl": 7, "Cold Coffee": 0, "Fruit Bowl": 10,
     }
     assert available["Cold Coffee"].state == inventory.RESTRICTED
@@ -42,7 +45,7 @@ def test_availability_4_aug_1230(shop, aug4_1230):
 @pytest.mark.parametrize("slot_fixture", ["aug5_1230", "aug5_1300"])
 def test_ac02_date_specific_conditions_do_not_carry_over_to_5_aug(shop, slot_fixture, request):
     slot_id = request.getfixturevalue(slot_fixture)
-    assert shop.available(slot_id) == {
+    assert shop.pdf_available(slot_id) == {
         "Veg Sandwich": 20, "Masala Dosa": 15, "Paneer Rice Bowl": 12, "Cold Coffee": 18, "Fruit Bowl": 10,
     }
 
@@ -56,8 +59,8 @@ def test_seed_commitments_are_confirmed_orders(db_path):
 # --- Submission: reserve all or nothing ---------------------------------------------------
 
 def test_ac03_successful_submission_reserves_every_line(shop, aug4_1300):
-    order_id = shop.order("Asha", aug4_1300, {"Masala Dosa": 2, "Fruit Bowl": 1})
-    assert shop.status(order_id) == Status.SUBMITTED
+    order_ids = shop.order("Asha", aug4_1300, {"Masala Dosa": 2, "Fruit Bowl": 1})
+    assert [shop.status(order_id) for order_id in order_ids] == [Status.SUBMITTED, Status.SUBMITTED]
     available = shop.available(aug4_1300)
     assert available["Masala Dosa"] == 13
     assert available["Fruit Bowl"] == 5
@@ -114,8 +117,9 @@ def test_repeated_items_are_merged_before_validation(shop, aug4_1300):
     with pytest.raises(AvailabilityError):
         orders.submit_order("Asha", aug4_1300, [(fruit, 3), (fruit, 4)], db_path=shop.db_path)
     order_id = orders.submit_order("Asha", aug4_1300, [(fruit, 2), (fruit, 2)], db_path=shop.db_path)
-    assert orders.get_order(order_id, db_path=shop.db_path)["items"] == [
-        {"name": "Fruit Bowl", "qty": 4, "outlet": "Healthy Food"}
+    (order_id,) = order_id.order_ids
+    assert [(item["name"], item["qty"]) for item in orders.get_order(order_id, db_path=shop.db_path)["items"]] == [
+        ("Fruit Bowl", 4)
     ]
     assert shop.available(aug4_1300)["Fruit Bowl"] == 2
 

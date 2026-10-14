@@ -1,4 +1,4 @@
-"""Menu, outlets, pickup slots and availability (BRD sections 6 and 7).
+"""Outlets, menu, pickup slots and availability (BRD sections 6 and 7).
 
 Availability is always calculated from orders, never stored as a counter:
 
@@ -6,7 +6,7 @@ Availability is always calculated from orders, never stored as a counter:
                           = qty_per_slot - sum(counted qty)   otherwise
 
 Reserving is inserting an order's lines; releasing is the order leaving a
-COUNTED status. Confirming or preparing changes nothing here, so stock is never
+COUNTED status. Accepting or preparing changes nothing here, so stock is never
 reserved or released twice.
 """
 
@@ -14,12 +14,16 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date
 
+from . import seed_data
 from .errors import LineFailure, NotFound
 from .status import COUNTED
 
 AVAILABLE = "available"
 SOLD_OUT = "sold out"
 RESTRICTED = "unavailable"
+
+# Below this many units the menu shows "Only N left".
+LOW_STOCK = 5
 
 REASON_LABELS = {
     "SOLD_OUT": "sold out",
@@ -34,6 +38,7 @@ class ItemAvailability:
     item_id: int
     name: str
     category: str
+    outlet_id: int
     outlet: str
     capacity: int
     used: int
@@ -42,21 +47,40 @@ class ItemAvailability:
     restriction: str | None  # human-readable reason when RESTRICTED
 
 
-def list_outlets(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute("SELECT id, name FROM outlet ORDER BY name").fetchall()
+def list_outlets(conn: sqlite3.Connection) -> list[dict]:
+    return [dict(row) for row in conn.execute("SELECT * FROM outlet ORDER BY name")]
 
 
-def list_menu(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute(
-        "SELECT m.id, m.name, m.category, m.qty_per_slot, o.id AS outlet_id, o.name AS outlet "
-        "FROM menu_item m JOIN outlet o ON o.id = m.outlet_id ORDER BY o.name"
-    ).fetchall()
+def get_outlet(conn: sqlite3.Connection, outlet_id: int) -> dict:
+    row = conn.execute("SELECT * FROM outlet WHERE id = ?", (outlet_id,)).fetchone()
+    if row is None:
+        raise NotFound(f"Outlet {outlet_id} does not exist.")
+    return dict(row)
 
 
-def list_slots(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute(
+def list_menu(conn: sqlite3.Connection, outlet_id: int | None = None) -> list[dict]:
+    """Menu items with their outlet, tags and customisation options."""
+    sql = ("SELECT m.*, o.name AS outlet FROM menu_item m JOIN outlet o ON o.id = m.outlet_id"
+           + (" WHERE m.outlet_id = ?" if outlet_id is not None else "") + " ORDER BY o.name, m.id")
+    rows = conn.execute(sql, (outlet_id,) if outlet_id is not None else ()).fetchall()
+    options: dict[int, list[dict]] = {}
+    for row in conn.execute("SELECT item_id, label, price_paise FROM item_option ORDER BY id"):
+        options.setdefault(row["item_id"], []).append({"label": row["label"], "price_paise": row["price_paise"]})
+    return [
+        {**dict(row), "tags": [tag for tag in row["tags"].split(",") if tag], "options": options.get(row["id"], [])}
+        for row in rows
+    ]
+
+
+def list_slots(conn: sqlite3.Connection, orderable_only: bool = False) -> list[sqlite3.Row]:
+    """All pickup slots; `orderable_only` keeps the dates customers order for
+    (the history-only date is left out)."""
+    rows = conn.execute(
         "SELECT id, slot_date, start_time, end_time FROM pickup_slot ORDER BY slot_date, start_time"
     ).fetchall()
+    if orderable_only:
+        rows = [row for row in rows if row["slot_date"] in seed_data.ORDER_DATES]
+    return rows
 
 
 def get_slot(conn: sqlite3.Connection, slot_id: int) -> sqlite3.Row:
@@ -80,7 +104,7 @@ def get_availability(conn: sqlite3.Connection, slot_id: int) -> list[ItemAvailab
     placeholders = ", ".join("?" for _ in counted)
     rows = conn.execute(
         f"""
-        SELECT m.id, m.name, m.category, o.name AS outlet, m.qty_per_slot,
+        SELECT m.id, m.name, m.category, o.id AS outlet_id, o.name AS outlet, m.qty_per_slot,
                COALESCE((SELECT SUM(oi.qty)
                            FROM order_item oi JOIN orders ord ON ord.id = oi.order_id
                           WHERE oi.item_id = m.id
@@ -92,7 +116,7 @@ def get_availability(conn: sqlite3.Connection, slot_id: int) -> list[ItemAvailab
                    AND (r.slot_id IS NULL OR r.slot_id = ?)
                  ORDER BY r.id LIMIT 1) AS restriction
           FROM menu_item m JOIN outlet o ON o.id = m.outlet_id
-         ORDER BY o.name
+         ORDER BY o.name, m.id
         """,
         (slot_id, *counted, slot["slot_date"], slot_id),
     ).fetchall()
@@ -107,8 +131,8 @@ def get_availability(conn: sqlite3.Connection, slot_id: int) -> list[ItemAvailab
             state = AVAILABLE if remaining > 0 else SOLD_OUT
             available, reason = remaining, None
         result.append(ItemAvailability(
-            item_id=row["id"], name=row["name"], category=row["category"], outlet=row["outlet"],
-            capacity=row["qty_per_slot"], used=row["used"], available=available,
+            item_id=row["id"], name=row["name"], category=row["category"], outlet_id=row["outlet_id"],
+            outlet=row["outlet"], capacity=row["qty_per_slot"], used=row["used"], available=available,
             state=state, restriction=reason,
         ))
     return result
@@ -117,7 +141,7 @@ def get_availability(conn: sqlite3.Connection, slot_id: int) -> list[ItemAvailab
 def check_lines(conn: sqlite3.Connection, slot_id: int, lines: dict[int, int]) -> list[LineFailure]:
     """Every line that cannot be fulfilled in full. An empty list means the
     complete order fits (BC-3, BC-4, INV-03). Never partial: callers reserve all
-    lines or none."""
+    lines or none. `lines` maps item id to the total quantity across the cart."""
     by_id = {item.item_id: item for item in get_availability(conn, slot_id)}
     failures = []
     for item_id, qty in lines.items():
