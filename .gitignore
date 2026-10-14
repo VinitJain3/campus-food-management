@@ -1,0 +1,5 @@
+.venv/
+__pycache__/
+.pytest_cache/
+campus_food.db
+*.db-journal
